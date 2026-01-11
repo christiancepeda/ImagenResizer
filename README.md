@@ -4,6 +4,8 @@
 ![Language: Swift](https://img.shields.io/badge/Language-Swift-F05138.svg?style=flat&logo=swift)
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat)
 
+![App Screenshot](screenshots/app_screenshot.png)
+
 ## 📖 About the Program
 
 **Image Resizer & WebP Converter** is a native macOS production tool designed to streamline the workflow of developers and designers who need consistent, web-optimized assets.
