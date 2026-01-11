@@ -11,7 +11,7 @@ import SwiftUI
 struct ImagenResizerApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            MainView()
         }
     }
 }
