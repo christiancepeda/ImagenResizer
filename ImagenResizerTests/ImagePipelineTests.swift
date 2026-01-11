@@ -50,8 +50,74 @@ final class ImagePipelineTests: XCTestCase {
         let original = createTestImage(width: 500, height: 500)
         let targetSize = CGSize(width: 100, height: 100)
         
+        // Use fit mode for this test, arbitrary choice, just checking size.
+        // Need to provide a format now.
         let processed = pipeline.resize(image: original, to: targetSize, mode: .fill)
         XCTAssertNotNil(processed)
         XCTAssertEqual(processed?.size, targetSize)
     }
+    
+    func testProcessToPNG() async throws {
+         let pipeline = ImagePipeline()
+         let width: CGFloat = 100
+         let height: CGFloat = 100
+         let original = createTestImage(width: width, height: height)
+         
+         // Create a temporary file for the input
+         let tempDir = FileManager.default.temporaryDirectory
+         let inputURL = tempDir.appendingPathComponent("test_input.png")
+         let tiffData = original.tiffRepresentation!
+         try tiffData.write(to: inputURL)
+         
+         let outputDir = tempDir
+         
+         let resultURL = try await pipeline.process(
+             fileURL: inputURL,
+             outputDir: outputDir,
+             targetSize: CGSize(width: 50, height: 50),
+             mode: .fill,
+             format: .png,
+             quality: 100,
+             lossless: false
+         )
+         
+         XCTAssertTrue(FileManager.default.fileExists(atPath: resultURL.path))
+         XCTAssertEqual(resultURL.pathExtension, "png")
+         
+         // Cleanup
+         try? FileManager.default.removeItem(at: inputURL)
+         try? FileManager.default.removeItem(at: resultURL)
+     }
+     
+     func testProcessToJPG() async throws {
+         let pipeline = ImagePipeline()
+         let width: CGFloat = 100
+         let height: CGFloat = 100
+         let original = createTestImage(width: width, height: height)
+         
+         // Create a temporary file for the input
+         let tempDir = FileManager.default.temporaryDirectory
+         let inputURL = tempDir.appendingPathComponent("test_input_jpg.png")
+         let tiffData = original.tiffRepresentation!
+         try tiffData.write(to: inputURL)
+         
+         let outputDir = tempDir
+         
+         let resultURL = try await pipeline.process(
+             fileURL: inputURL,
+             outputDir: outputDir,
+             targetSize: CGSize(width: 50, height: 50),
+             mode: .fill,
+             format: .jpg,
+             quality: 50,
+             lossless: false
+         )
+         
+         XCTAssertTrue(FileManager.default.fileExists(atPath: resultURL.path))
+         XCTAssertEqual(resultURL.pathExtension, "jpg")
+         
+         // Cleanup
+         try? FileManager.default.removeItem(at: inputURL)
+         try? FileManager.default.removeItem(at: resultURL)
+     }
 }

@@ -190,14 +190,27 @@ struct MainView: View {
                     }
                     .pickerStyle(.segmented)
                     
-                    // Quality
-                    VStack(alignment: .leading) {
-                        Toggle("Lossless Encoding", isOn: $viewModel.isLossless)
-                        
-                        HStack {
-                            Text("Quality: \(Int(viewModel.webpQuality))")
-                            Slider(value: $viewModel.webpQuality, in: 0...100, step: 1)
-                                .disabled(viewModel.isLossless)
+                    // Output Format
+                    Picker("Format:", selection: $viewModel.outputFormat) {
+                        ForEach(ImagePipeline.OutputFormat.allCases) { format in
+                            Text(format.rawValue).tag(format)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    
+                    // Quality / Lossless
+                    // Show for WebP and JPEG. Hide for PNG (lossless by default).
+                    if viewModel.outputFormat == .webp || viewModel.outputFormat == .jpg {
+                        VStack(alignment: .leading) {
+                            if viewModel.outputFormat == .webp {
+                                Toggle("Lossless Encoding", isOn: $viewModel.isLossless)
+                            }
+                            
+                            HStack {
+                                Text("Quality: \(Int(viewModel.webpQuality))")
+                                Slider(value: $viewModel.webpQuality, in: 0...100, step: 1)
+                                    .disabled(viewModel.outputFormat == .webp && viewModel.isLossless)
+                            }
                         }
                     }
                 }

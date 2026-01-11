@@ -47,6 +47,7 @@ class MainViewModel: ObservableObject {
     @Published var isLossless: Bool = false
     @Published var targetWidth: Double = 800.0
     @Published var targetHeight: Double = 800.0
+    @Published var outputFormat: ImagePipeline.OutputFormat = .webp
     
     // Logs
     @Published var logs: [LogMessage] = []
@@ -256,6 +257,7 @@ class MainViewModel: ObservableObject {
                         outputDir: outputDir,
                         targetSize: currentTargetSize,
                         mode: resizeMode,
+                        format: outputFormat,
                         quality: webpQuality,
                         lossless: isLossless
                     )

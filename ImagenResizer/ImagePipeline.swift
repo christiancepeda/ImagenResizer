@@ -10,40 +10,87 @@ enum ResizeMode: String, CaseIterable, Identifiable {
 
 struct ImagePipeline {
     
+    enum OutputFormat: String, CaseIterable, Identifiable {
+        case webp = "WebP"
+        case png = "PNG"
+        case jpg = "JPEG"
+        
+        var id: String { self.rawValue }
+        
+        var fileExtension: String {
+            switch self {
+            case .webp: return "webp"
+            case .png: return "png"
+            case .jpg: return "jpg"
+            }
+        }
+    }
+    
     enum PipelineError: Error {
         case loadFailed
         case resizeFailed
+        case conversionFailed
     }
     
     /// Main processing function
-    func process(fileURL: URL, outputDir: URL, targetSize: CGSize, mode: ResizeMode, quality: Double, lossless: Bool) async throws -> URL {
-        // 1. Load Image safely
-        guard let originalImage = NSImage(contentsOf: fileURL) else {
-            throw PipelineError.loadFailed
-        }
+    func process(fileURL: URL, outputDir: URL, targetSize: CGSize, mode: ResizeMode, format: OutputFormat, quality: Double, lossless: Bool) async throws -> URL {
         
-        // 2. Resize
-        guard let resizedImage = resize(image: originalImage, to: targetSize, mode: mode) else {
-            throw PipelineError.resizeFailed
-        }
-        
-        // 3. Convert to WebP
-        // Extract CGImage on MainActor (or current actor context) to safely pass to background
-        guard let cgImage = resizedImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-             throw PipelineError.resizeFailed
-        }
-        
-        // Run on a detached task to avoid blocking the main thread if the encoder is heavy
-        let webpData = try await Task.detached(priority: .userInitiated) {
-            return try WebPEncoder.encode(image: cgImage, quality: quality, lossless: lossless)
+        // Run all processing on a detached task to:
+        // 1. Avoid blocking Main Actor (UI)
+        // 2. Ensure a suspension point so UI updates can process (fixing "Publishing changes..." warning)
+        return try await Task.detached(priority: .userInitiated) {
+            
+            // 1. Load Image
+            // Note: NSImage(contentsOf:) is thread-safe for reading generally, but we should be careful.
+            // Best to load data and init image.
+            guard let originalImage = NSImage(contentsOf: fileURL) else {
+                throw PipelineError.loadFailed
+            }
+            
+            // 2. Resize
+            // resize uses NSGraphicsContext, which is thread-local. It should be safe in a detached task as long as we don't access MainActor state.
+            guard let resizedImage = self.resize(image: originalImage, to: targetSize, mode: mode) else {
+                throw PipelineError.resizeFailed
+            }
+            
+            // 3. Convert & Save
+            let fileName = fileURL.deletingPathExtension().lastPathComponent
+            let finalURL = self.getUniqueFileURL(directory: outputDir, fileName: fileName, extension: format.fileExtension)
+            
+            switch format {
+            case .webp:
+                // Extract CGImage
+                guard let cgImage = resizedImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                    throw PipelineError.resizeFailed
+                }
+                
+                let webpData = try WebPEncoder.encode(image: cgImage, quality: quality, lossless: lossless)
+                try webpData.write(to: finalURL)
+                
+            case .png:
+                try self.saveImage(resizedImage, to: finalURL, type: .png)
+                
+            case .jpg:
+                // Map 0-100 quality to 0.0-1.0
+                let compression = CGFloat(quality / 100.0)
+                try self.saveImage(resizedImage, to: finalURL, type: .jpeg, properties: [.compressionFactor: compression])
+            }
+            
+            return finalURL
         }.value
+    }
+    
+    private func saveImage(_ image: NSImage, to url: URL, type: NSBitmapImageRep.FileType, properties: [NSBitmapImageRep.PropertyKey: Any] = [:]) throws {
+        guard let tiffData = image.tiffRepresentation,
+              let bitmapRep = NSBitmapImageRep(data: tiffData) else {
+            throw PipelineError.conversionFailed
+        }
         
-        // 4. Save
-        let fileName = fileURL.deletingPathExtension().lastPathComponent
-        let finalURL = getUniqueFileURL(directory: outputDir, fileName: fileName, extension: "webp")
+        guard let data = bitmapRep.representation(using: type, properties: properties) else {
+            throw PipelineError.conversionFailed
+        }
         
-        try webpData.write(to: finalURL)
-        return finalURL
+        try data.write(to: url)
     }
     
     // MARK: - Helper Methods
