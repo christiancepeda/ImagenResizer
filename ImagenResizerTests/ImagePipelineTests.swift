@@ -44,4 +44,14 @@ final class ImagePipelineTests: XCTestCase {
         XCTAssertNotNil(processed)
         XCTAssertEqual(processed?.size, CGSize(width: 800, height: 800))
     }
+    
+    func testResizeCustomDimensions() {
+        let pipeline = ImagePipeline()
+        let original = createTestImage(width: 500, height: 500)
+        let targetSize = CGSize(width: 100, height: 100)
+        
+        let processed = pipeline.resize(image: original, to: targetSize, mode: .fill)
+        XCTAssertNotNil(processed)
+        XCTAssertEqual(processed?.size, targetSize)
+    }
 }

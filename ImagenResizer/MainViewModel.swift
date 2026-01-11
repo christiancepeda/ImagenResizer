@@ -45,6 +45,8 @@ class MainViewModel: ObservableObject {
     @Published var resizeMode: ResizeMode = .fill
     @Published var webpQuality: Double = 80.0
     @Published var isLossless: Bool = false
+    @Published var targetWidth: Double = 800.0
+    @Published var targetHeight: Double = 800.0
     
     // Logs
     @Published var logs: [LogMessage] = []
@@ -129,6 +131,73 @@ class MainViewModel: ObservableObject {
         log("Processing cancelled by user.", type: .info)
     }
     
+    func handleDrop(providers: [NSItemProvider]) -> Bool {
+        var found = false
+        
+        for provider in providers {
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                found = true
+                
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { (item, error) in
+                    if let error = error {
+                        Task { @MainActor in
+                            self.log("Drop error: \(error.localizedDescription)", type: .error)
+                        }
+                        return
+                    }
+                    
+                    if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
+                        Task { @MainActor in
+                            self.processDroppedURL(url)
+                        }
+                    } else if let url = item as? URL {
+                        Task { @MainActor in
+                            self.processDroppedURL(url)
+                        }
+                    }
+                }
+            }
+        }
+        
+        return found
+    }
+    
+    private func processDroppedURL(_ url: URL) {
+        // Check if folder or file
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) {
+            if isDir.boolValue {
+                // Determine if we should scan folder
+                // Re-use logic from selectInputFolder somewhat, but we have the URL directly
+                do {
+                    let fileURLs = try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
+                    let imageExtensions = ["png", "jpg", "jpeg", "heic", "tiff", "webp"]
+                    let validImages = fileURLs.filter { u in
+                        imageExtensions.contains(u.pathExtension.lowercased())
+                    }
+                    
+                    let newImages = validImages.map { ProcessedImage(originalURL: $0) }
+                    if !newImages.isEmpty {
+                        self.inputImages.append(contentsOf: newImages)
+                        log("Dropped folder: Added \(newImages.count) images from \(url.lastPathComponent)", type: .info)
+                    } else {
+                        log("Dropped folder has no compatible images: \(url.lastPathComponent)", type: .info)
+                    }
+                } catch {
+                    log("Failed to read dropped folder: \(error.localizedDescription)", type: .error)
+                }
+            } else {
+                // Is file
+                let imageExtensions = ["png", "jpg", "jpeg", "heic", "tiff", "webp"]
+                if imageExtensions.contains(url.pathExtension.lowercased()) {
+                    let newImage = ProcessedImage(originalURL: url)
+                    self.inputImages.append(newImage)
+                    log("Dropped file: \(url.lastPathComponent)", type: .info)
+                }
+            }
+        }
+    }
+    
     // MARK: - Processing Logic
     
     func startConversion() {
@@ -170,6 +239,8 @@ class MainViewModel: ObservableObject {
                 }
             }
             
+            let currentTargetSize = CGSize(width: targetWidth, height: targetHeight)
+            
             for index in 0..<inputImages.count {
                 if Task.isCancelled { break }
                 
@@ -183,6 +254,7 @@ class MainViewModel: ObservableObject {
                     let finalURL = try await pipeline.process(
                         fileURL: imageItem.originalURL,
                         outputDir: outputDir,
+                        targetSize: currentTargetSize,
                         mode: resizeMode,
                         quality: webpQuality,
                         lossless: isLossless

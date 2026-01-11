@@ -10,15 +10,13 @@ enum ResizeMode: String, CaseIterable, Identifiable {
 
 struct ImagePipeline {
     
-    private let targetSize = CGSize(width: 800, height: 800)
-    
     enum PipelineError: Error {
         case loadFailed
         case resizeFailed
     }
     
     /// Main processing function
-    func process(fileURL: URL, outputDir: URL, mode: ResizeMode, quality: Double, lossless: Bool) async throws -> URL {
+    func process(fileURL: URL, outputDir: URL, targetSize: CGSize, mode: ResizeMode, quality: Double, lossless: Bool) async throws -> URL {
         // 1. Load Image safely
         guard let originalImage = NSImage(contentsOf: fileURL) else {
             throw PipelineError.loadFailed
@@ -30,9 +28,14 @@ struct ImagePipeline {
         }
         
         // 3. Convert to WebP
-        // Run on a detached task to avoid blocking the main thread if the encoder is heavy (though async/await handles this well likely)
+        // Extract CGImage on MainActor (or current actor context) to safely pass to background
+        guard let cgImage = resizedImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+             throw PipelineError.resizeFailed
+        }
+        
+        // Run on a detached task to avoid blocking the main thread if the encoder is heavy
         let webpData = try await Task.detached(priority: .userInitiated) {
-            return try WebPEncoder.encode(image: resizedImage, quality: quality, lossless: lossless)
+            return try WebPEncoder.encode(image: cgImage, quality: quality, lossless: lossless)
         }.value
         
         // 4. Save

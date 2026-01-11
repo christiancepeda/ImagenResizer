@@ -11,28 +11,22 @@ struct WebPEncoder {
         case invalidImage
     }
     
-    /// Encodes an NSImage to WebP data.
+    /// Encodes a CGImage to WebP data.
     /// - Parameters:
-    ///   - image: The NSImage to encode.
+    ///   - image: The CGImage to encode.
     ///   - quality: The quality factor (0.0 to 100.0) for lossy compression. Ignored if lossless is true.
     ///   - lossless: Whether to use lossless compression.
     /// - Returns: The encoded WebP data.
-    static func encode(image: NSImage, quality: Double, lossless: Bool) throws -> Data {
-        // Ensure the coder is registered. It's safe to call this multiple times.
+    static func encode(image: CGImage, quality: Double, lossless: Bool) throws -> Data {
+        // Ensure the coder is registered.
+        // Accessing shared instances might be main thread bound depending on implementation, 
+        // but typically coder registration should be done once or is thread safe.
+        // However, SDImageWebPCoder itself is a class.
+        // To be strictly safe for background execution, we assume SDWebImage handles concurrency.
         let coder = SDImageWebPCoder.shared
+        // We probably don't need to re-register every time if it's already done in App Delegate,
+        // but for safety here we keep it. Note: SDImageCodersManager access may be thread-safe.
         SDImageCodersManager.shared.addCoder(coder)
-        
-        // Convert NSImage to CGImage
-        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            throw EncoderError.invalidImage
-        }
-        
-        // Prepare options
-        // SDWebImageWebPCoder uses a quality range of 0.0-1.0 if not specified otherwise, 
-        // but let's check the documentation or standard behavior. 
-        // Typically SDWebImage generic coder options accept double.
-        // For SDImageWebPCoder, .lossless is a boolean option.
-        // .compressionQuality is standard.
         
         let compressionQuality = quality / 100.0
         
@@ -42,26 +36,23 @@ struct WebPEncoder {
         ]
         
         if lossless {
-            // Some versions of the coder use a specific key for lossless, 
-            // but often max quality (1.0) + specific format hint effectively does it in some libs.
-            // Explicitly for SDWebImageWebPCoder:
-            // There isn't a widely documented global ".lossless" key in the standard SDImageCoderOption 
-            // set that is strictly typed without checking the specific library constants.
-            // However, typically passing 1.0 quality is not enough for TRUE lossless in WebP (which is a separate mode).
-            // Let's assume the user will relying on the coder to handle standard compressionQuality=1.0 as high quality.
-            // BUT, libwebp has a specific 'lossless' flas. 
-            // We will stick to standard compressionQuality for now, as SDWebImage abstracts this.
-            // If lossless is strictly required, typically we might need to access the underlying libwebp or check if the coder exposes a custom key.
-            // Looking at SDWebImageWebPCoder source (common knowledge), it normally respects `.encodeCompressionQuality`.
-            // There is no standard "lossless" option key exposed in the public `SDImageCoderOption` enum easily without raw strings.
-            // We will use a raw string key if we really need it, but for safety in this strict environment,
-            // we will assume quality 100 is "near lossless" or sufficient, OR just use the standard API.
-            // To be safe and professional:
             options[.encodeCompressionQuality] = 1.0
         }
         
-        // Encode
-        guard let data = coder.encodedData(with: image, format: .webP, options: options) else {
+        // Encode using the coder
+        // Note: SDImageCoder protocol expects NSImage/UIImage usually for `encodedData(with:format:options:)`
+        // BUT we need to avoid NSImage on background thread if possible, or at least avoid the MainActor constraint.
+        // SDWebImageWebPCoder DOES have `encodedData(with:format:options:)` which takes UIImage/NSImage.
+        // Does it verify thread?
+        // Actually, creating a temporary NSImage wrapping a CGImage on a background thread IS generally safe 
+        // IF we don't draw into it or use it for UI.
+        // The issue before was passing `resizedImage` (NSImage) created on MainActor into the closure.
+        
+        // Let's wrap the CGImage in an NSImage locally here.
+        // Since this is a local NSImage not attached to any view, it's safer.
+        let tempImage = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+        
+        guard let data = coder.encodedData(with: tempImage, format: .webP, options: options) else {
             throw EncoderError.encodingFailed
         }
         

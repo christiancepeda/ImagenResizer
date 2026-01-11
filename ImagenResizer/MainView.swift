@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct MainView: View {
     @StateObject private var viewModel = MainViewModel()
@@ -100,6 +101,9 @@ struct MainView: View {
                 }
             }
         }
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            viewModel.handleDrop(providers: providers)
+        }
     }
     
     @ViewBuilder
@@ -154,6 +158,26 @@ struct MainView: View {
                             Text("Not selected")
                                 .foregroundColor(.red)
                         }
+                    }
+                    
+                    Divider()
+                    
+                    // Dimensions
+                    GroupBox(label: Label("Dimensions", systemImage: "aspectratio")) {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("Width")
+                                    .font(.caption)
+                                TextField("Width", value: $viewModel.targetWidth, formatter: NumberFormatter())
+                            }
+                            
+                            VStack(alignment: .leading) {
+                                Text("Height")
+                                    .font(.caption)
+                                TextField("Height", value: $viewModel.targetHeight, formatter: NumberFormatter())
+                            }
+                        }
+                        .padding(.top, 4)
                     }
                     
                     Divider()
