@@ -4,7 +4,7 @@
 ![Language: Swift](https://img.shields.io/badge/Language-Swift-F05138.svg?style=flat&logo=swift)
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat)
 
-![App Screenshot](screenshots/app_screensh.png)
+![App Screenshot](screenshots/app_screenshot.png)
 
 ## 📖 About the Program
 
