@@ -14,6 +14,7 @@ struct ImagePipeline {
         case webp = "WebP"
         case png = "PNG"
         case jpg = "JPEG"
+        case svg = "SVG"
         
         var id: String { self.rawValue }
         
@@ -22,6 +23,7 @@ struct ImagePipeline {
             case .webp: return "webp"
             case .png: return "png"
             case .jpg: return "jpg"
+            case .svg: return "svg"
             }
         }
     }
@@ -48,14 +50,14 @@ struct ImagePipeline {
             }
             
             // 2. Resize
-            // resize uses NSGraphicsContext, which is thread-local. It should be safe in a detached task as long as we don't access MainActor state.
-            guard let resizedImage = self.resize(image: originalImage, to: targetSize, mode: mode) else {
+            // resize uses NSGraphicsContext, which is thread-local. It should be safe in a detached task.
+            guard let resizedImage = ImagePipeline.resize(image: originalImage, to: targetSize, mode: mode) else {
                 throw PipelineError.resizeFailed
             }
             
             // 3. Convert & Save
             let fileName = fileURL.deletingPathExtension().lastPathComponent
-            let finalURL = self.getUniqueFileURL(directory: outputDir, fileName: fileName, extension: format.fileExtension)
+            let finalURL = ImagePipeline.getUniqueFileURL(directory: outputDir, fileName: fileName, extension: format.fileExtension)
             
             switch format {
             case .webp:
@@ -64,23 +66,30 @@ struct ImagePipeline {
                     throw PipelineError.resizeFailed
                 }
                 
+                // Assuming WebPEncoder.encode might be MainActor bound due to SDWebImage dependency
+                // We will try calling it directly. If it fails, we might need MainActor.run
+                // For now, let's keep it here.
                 let webpData = try WebPEncoder.encode(image: cgImage, quality: quality, lossless: lossless)
                 try webpData.write(to: finalURL)
                 
             case .png:
-                try self.saveImage(resizedImage, to: finalURL, type: .png)
+                try ImagePipeline.saveImage(resizedImage, to: finalURL, type: .png)
                 
             case .jpg:
                 // Map 0-100 quality to 0.0-1.0
                 let compression = CGFloat(quality / 100.0)
-                try self.saveImage(resizedImage, to: finalURL, type: .jpeg, properties: [.compressionFactor: compression])
+                try ImagePipeline.saveImage(resizedImage, to: finalURL, type: .jpeg, properties: [.compressionFactor: compression])
+                
+            case .svg:
+                // Create an SVG with the raster image embedded
+                try ImagePipeline.saveAsSVG(image: resizedImage, to: finalURL, quality: quality)
             }
             
             return finalURL
         }.value
     }
     
-    private func saveImage(_ image: NSImage, to url: URL, type: NSBitmapImageRep.FileType, properties: [NSBitmapImageRep.PropertyKey: Any] = [:]) throws {
+    private static func saveImage(_ image: NSImage, to url: URL, type: NSBitmapImageRep.FileType, properties: [NSBitmapImageRep.PropertyKey: Any] = [:]) throws {
         guard let tiffData = image.tiffRepresentation,
               let bitmapRep = NSBitmapImageRep(data: tiffData) else {
             throw PipelineError.conversionFailed
@@ -93,10 +102,32 @@ struct ImagePipeline {
         try data.write(to: url)
     }
     
+    private static func saveAsSVG(image: NSImage, to url: URL, quality: Double) throws {
+        // Convert NSImage to JPEG data for embedding (smaller size usually)
+        // Or PNG if we want transparency. Let's use PNG for transparency support since SVG often implies vectors/transparency.
+        guard let tiffData = image.tiffRepresentation,
+              let bitmapRep = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmapRep.representation(using: .png, properties: [:]) else {
+            throw PipelineError.conversionFailed
+        }
+        
+        let base64String = pngData.base64EncodedString()
+        let width = Int(image.size.width)
+        let height = Int(image.size.height)
+        
+        let svgContent = """
+        <svg width="\(width)" height="\(height)" viewBox="0 0 \(width) \(height)" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+            <image width="\(width)" height="\(height)" xlink:href="data:image/png;base64,\(base64String)"/>
+        </svg>
+        """
+        
+        try svgContent.write(to: url, atomically: true, encoding: .utf8)
+    }
+    
     // MARK: - Helper Methods
     
     /// Resizes the image according to the specified mode.
-    func resize(image: NSImage, to size: CGSize, mode: ResizeMode) -> NSImage? {
+    static func resize(image: NSImage, to size: CGSize, mode: ResizeMode) -> NSImage? {
         let width = Int(size.width)
         let height = Int(size.height)
         
@@ -174,7 +205,7 @@ struct ImagePipeline {
     }
     
     /// Handles filename collisions by appending -1, -2, etc.
-    private func getUniqueFileURL(directory: URL, fileName: String, extension fileExtension: String) -> URL {
+    private static func getUniqueFileURL(directory: URL, fileName: String, extension fileExtension: String) -> URL {
         var counter = 0
         var currentURL = directory.appendingPathComponent("\(fileName).\(fileExtension)")
         

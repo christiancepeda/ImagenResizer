@@ -85,7 +85,7 @@ class MainViewModel: ObservableObject {
             do {
                 let fileURLs = try FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil)
                 // Filter images by checking conformance to UTType.image if possible, otherwise by extension
-                let imageExtensions = ["png", "jpg", "jpeg", "heic", "tiff", "webp"]
+                let imageExtensions = ["png", "jpg", "jpeg", "heic", "tiff", "webp", "svg"]
                 let validImages = fileURLs.filter { url in
                     imageExtensions.contains(url.pathExtension.lowercased())
                 }
@@ -172,7 +172,7 @@ class MainViewModel: ObservableObject {
                 // Re-use logic from selectInputFolder somewhat, but we have the URL directly
                 do {
                     let fileURLs = try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
-                    let imageExtensions = ["png", "jpg", "jpeg", "heic", "tiff", "webp"]
+                    let imageExtensions = ["png", "jpg", "jpeg", "heic", "tiff", "webp", "svg"]
                     let validImages = fileURLs.filter { u in
                         imageExtensions.contains(u.pathExtension.lowercased())
                     }
@@ -189,7 +189,7 @@ class MainViewModel: ObservableObject {
                 }
             } else {
                 // Is file
-                let imageExtensions = ["png", "jpg", "jpeg", "heic", "tiff", "webp"]
+                let imageExtensions = ["png", "jpg", "jpeg", "heic", "tiff", "webp", "svg"]
                 if imageExtensions.contains(url.pathExtension.lowercased()) {
                     let newImage = ProcessedImage(originalURL: url)
                     self.inputImages.append(newImage)
